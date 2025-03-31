@@ -39,7 +39,7 @@ int main() {
 
    while(true) {
     ssize_t bytes_read = read(new_socket, message, 1024);
-    if(bytes_read <= 0)break;
+    if(bytes_read <= 0)break; // terminates even after client has terminated
     cout << "recieved : " << message << endl;
     send(new_socket, message, bytes_read, 0);
     memset(message, 0 , sizeof(message));
