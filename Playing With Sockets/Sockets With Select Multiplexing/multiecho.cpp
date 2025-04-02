@@ -15,8 +15,8 @@
 using namespace std;
 
 void broadcastMessage(const map<int,string>& clients, const string& message) {
-    string msg = message + "\n";  // Ensure newline for proper formatting
-    for(auto &val : clients) {  
+    string msg = message;
+    for(auto &val : clients) {
         send(val.first, msg.c_str(), msg.length(), 0);
     }
 }
@@ -43,7 +43,7 @@ int main() {
     
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
     if(server_fd < 0) {
-        cerr << "Failed to create server" << endl;
+        perror("server creation failed");
         return 1;
     }
 
@@ -56,12 +56,12 @@ int main() {
     setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
     if(bind(server_fd, (struct sockaddr*)&server_addy, sizeof(server_addy)) < 0) {
-        cerr << "Could not Bind the server" << endl;
+       perror("Binding Failed");
         return 1;
     }
 
     if (listen(server_fd, MAX_CLIENTS) < 0) {
-        cerr << "Error listening on socket" << endl;
+        perror("Listen call Failed");
         return 1;
     }
 
@@ -79,14 +79,14 @@ int main() {
          
         int activity = select(max_fd + 1, &monitor_fds, NULL, NULL, NULL);
         if(activity < 0) {
-            cerr << "Select failed" << endl;
+            perror("Select call Failed");
             return 1;
         }
         
         if(FD_ISSET(server_fd, &monitor_fds)) {
             new_client_fd = accept(server_fd, (struct sockaddr*) &client_addy, &client_address);
             if(new_client_fd < 0) {
-                cerr << "Connection Failed" << endl;
+                perror("connection failed");
             } else {
                 MakeNonBlocking(new_client_fd);
                 clients[new_client_fd] = ""; 
@@ -99,23 +99,31 @@ int main() {
             if(FD_ISSET(client_fd, &monitor_fds)) {
                 int bytes_recv = recv(client_fd, buffer, BUFFER_SIZE - 1, 0);
                 if(bytes_recv <= 0) {
-                    cout << "Client disconnected" << endl;
+                    cout << "Client " + it->second + " has disconnected" << endl;
                     close(client_fd);
                     it = clients.erase(it);
                     continue;
                 }
 
                 buffer[bytes_recv] = '\0';
-                string msg(buffer);
-                msg.erase(msg.find_last_not_of("\r\n") + 1);
 
                 if(clients[client_fd].empty()) {
+                    int len = strlen(buffer);
+                    while (len > 0 && (buffer[len - 1] == '\n' || buffer[len - 1] == '\r')) {
+                        buffer[len - 1] = '\0';
+                        len--; // the username is by default stored with \n charecter so we trim it. 
+                    }
                     clients[client_fd] = string(buffer);
-                    string welcome_msg = clients[client_fd] + " has joined the chat.";
+                    string welcome_msg = clients[client_fd] + " has joined the chat.\n";
                     cout << welcome_msg << endl;
                     broadcastMessage(clients, welcome_msg);
                 } else {
-                    string echo = clients[client_fd] + ": " + buffer;
+                    int len = strlen(buffer);
+                    while (len > 0 && (buffer[len - 1] == '\n' || buffer[len - 1] == '\r')) {
+                        buffer[len - 1] = '\0'; 
+                        len--;
+                    }               
+                    string echo = clients[client_fd] + ": " + buffer + "\n";
                     cout << echo << endl;
                     broadcastMessage(clients, echo);
                 }
