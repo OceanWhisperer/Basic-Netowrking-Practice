@@ -5,16 +5,21 @@
 #include <netinet/in.h>
 #include <vector>
 #include <cstring>
-#include <map>
+#include <unordered_map>
 #include <fcntl.h>
 
 #define PORT 12345
 #define MAX_CLIENTS 10
-#define BUFFER_SIZE 1024    
+#define BUFFER_SIZE 1024
 
 using namespace std;
+void broadcastHistory(vector<string>&chat_history, int client) {
+   for(const auto c : chat_history) {
+     send(client, c.c_str(), c.length(), 0);
+   }
+}
 
-void broadcastMessage(const map<int,string>& clients, const string& message) {
+void broadcastMessage(const unordered_map<int,string>& clients, const string& message) {
     string msg = message;
     for(auto &val : clients) {
         send(val.first, msg.c_str(), msg.length(), 0);
@@ -38,7 +43,7 @@ int main() {
     struct sockaddr_in server_addy, client_addy;
     socklen_t client_address = sizeof(client_addy);
     fd_set monitor_fds;
-    map<int , string> clients; 
+    unordered_map<int , string> clients; 
     char buffer[BUFFER_SIZE];
     
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -66,6 +71,8 @@ int main() {
     }
 
     cout << "Server started on port " << PORT << endl;
+
+    vector<string>chat_history;
 
     while(true) {
         FD_ZERO(&monitor_fds);
@@ -115,15 +122,23 @@ int main() {
                     }
                     clients[client_fd] = string(buffer);
                     string welcome_msg = clients[client_fd] + " has joined the chat.\n";
-                    cout << welcome_msg << endl;
                     broadcastMessage(clients, welcome_msg);
+                    cout << welcome_msg << endl;
+                    int total_clients = clients.size();
+                    total_clients--;
+                    chat_history.push_back(welcome_msg);
+                    if(total_clients < chat_history.size()) {
+                        broadcastHistory(chat_history, client_fd);
+                    }
                 } else {
                     int len = strlen(buffer);
                     while (len > 0 && (buffer[len - 1] == '\n' || buffer[len - 1] == '\r')) {
-                        buffer[len - 1] = '\0'; 
-                        len--;
-                    }               
+                        buffer[len - 1] = '\0';
+                        len--; // the normal message is also by default stored with \n.
+                    }
+                              
                     string echo = clients[client_fd] + ": " + buffer + "\n";
+                    chat_history.push_back(echo);
                     cout << echo << endl;
                     broadcastMessage(clients, echo);
                 }
