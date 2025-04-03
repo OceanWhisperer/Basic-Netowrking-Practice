@@ -19,9 +19,12 @@ void broadcastHistory(vector<string>&chat_history, int client) {
    }
 }
 
-void broadcastMessage(const unordered_map<int,string>& clients, const string& message) {
+void broadcastMessage(const unordered_map<int,string>& clients, const string& message, int current_client) {
     string msg = message;
     for(auto &val : clients) {
+        if(val.first == current_client && !val.second.empty()) {
+            continue;
+        }
         send(val.first, msg.c_str(), msg.length(), 0);
     }
 }
@@ -122,13 +125,15 @@ int main() {
                     }
                     clients[client_fd] = string(buffer);
                     string welcome_msg = clients[client_fd] + " has joined the chat.\n";
-                    broadcastMessage(clients, welcome_msg);
                     cout << welcome_msg << endl;
                     int total_clients = clients.size();
                     total_clients--;
                     chat_history.push_back(welcome_msg);
                     if(total_clients < chat_history.size()) {
                         broadcastHistory(chat_history, client_fd);
+                    }
+                    else {
+                        broadcastMessage(clients, welcome_msg, client_fd);
                     }
                 } else {
                     int len = strlen(buffer);
@@ -140,7 +145,7 @@ int main() {
                     string echo = clients[client_fd] + ": " + buffer + "\n";
                     chat_history.push_back(echo);
                     cout << echo << endl;
-                    broadcastMessage(clients, echo);
+                    broadcastMessage(clients, echo, client_fd);
                 }
             }
             ++it;
