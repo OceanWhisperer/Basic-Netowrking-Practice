@@ -7,12 +7,23 @@
 #include <cstring>
 #include <unordered_map>
 #include <fcntl.h>
+#include <fstream>
 
 #define PORT 12345
 #define MAX_CLIENTS 10
 #define BUFFER_SIZE 1024
 # define MAX_CHATS 100
 using namespace std;
+
+void log_chats(vector<string>&chat_history) {
+    time_t curtime = time(NULL);
+    ofstream fout("chat_log.txt", ios::app);
+    fout << curtime << endl;
+    cout << "\n";
+    for(auto &line : chat_history) {
+        fout << line << endl;
+    }
+}
 
 void remove_inactive(unordered_map<int,time_t>&last_active, unordered_map<int, string>&clients) {
     time_t now = time(NULL);
@@ -118,6 +129,7 @@ int main() {
         }
         if(activity == 0) {
             remove_inactive(last_active, clients);
+            log_chats(chat_history);
         }
         
         if(FD_ISSET(server_fd, &monitor_fds)) {
