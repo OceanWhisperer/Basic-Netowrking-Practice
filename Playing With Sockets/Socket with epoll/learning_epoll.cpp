@@ -1,111 +1,125 @@
-#include <iostream>
-#include <string>
-#include <cstring>
-#include <unordered_map>
-#include <unordered_set>
-#include <vector>
+#include <bits/stdc++.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <fcntl.h>
 #include <unistd.h>
-
-#define PORT 9000
-#define MAX_CLIENTS 1000
-#define MAX_EVENTS 10
-#define BUFFER_SIZE 1024
-
-int make_nonblocking(int fd) {
-    int flags = fcntl(fd, F_GETFL, 0); 
-    if (flags == -1) return -1;  
-    flags |= O_NONBLOCK;  
-    return fcntl(fd, F_SETFL, flags);  
-}
-
 using namespace std;
 
-int main() {
-    int server_fd, client_fd, epoll_fd;
-    sockaddr_in addr;
-    server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_fd == -1) {
-        perror("socket");
-        return -1;
-    }
-   
-    make_nonblocking(server_fd);
-    
+#define MAX_EVENTS 1024
+#define BUFFER_SIZE 1024
+#define PORT 12345
+
+unordered_map<int, string> clients_to_usernames;
+unordered_map<int, string> clients_to_rooms;
+unordered_map<string, unordered_set<int>> rooms_to_clients;
+
+void set_non_blocking(int sockfd) {
+    int flags = fcntl(sockfd, F_GETFL, 0);
+    fcntl(sockfd, F_SETFL, flags | O_NONBLOCK);
+}
+
+int create_server_socket(int port) {
+    int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_fd == -1) exit(1);
+
+    int opt = 1;
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+    sockaddr_in addr{};
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(PORT);
     addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port = htons(port);
 
-    if (bind(server_fd, (sockaddr*)&addr, sizeof(addr)) == -1) {
-        perror("bind");
-        return -1;
-    }
+    if (bind(server_fd, (sockaddr*)&addr, sizeof(addr)) < 0) exit(1);
+    if (listen(server_fd, SOMAXCONN) < 0) exit(1);
 
-    // Start listening for incoming connections
-    if (listen(server_fd, SOMAXCONN) == -1) {
-        perror("listen");
-        return -1;
-    }
+    set_non_blocking(server_fd);
+    cout << "Server started running on port " << PORT << endl;
+    return server_fd;
+}
 
-    // Create the epoll instance
-    epoll_fd = epoll_create1(0);
-    if (epoll_fd == -1) {
-        perror("epoll_create1");
-        return -1;
-    }
-    struct epoll_event event;
-    struct epoll_event events[MAX_EVENTS];
+int main() {
+
+    int server_fd = create_server_socket(PORT);
+    int epoll_fd = epoll_create1(0);
+
+    epoll_event event{};
+    event.events = EPOLLIN;
     event.data.fd = server_fd;
-    event.events = EPOLLIN;  // Monitor for incoming connections
-    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_fd, &event) == -1) {
-        perror("epoll_ctl error");
-        return -1;
-    }
+    epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_fd, &event);
 
-    cout << "Server started running on Port " << PORT << endl;
+    epoll_event events[MAX_EVENTS];
 
-    while(true) {
-        int event_count = epoll_wait(epoll_fd, events, MAX_CLIENTS, -1); // count of events that are cool for io
-        for(int i=0; i < event_count; ++i) {
+    while (true) {
+        int n = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
+        for (int i = 0; i < n; ++i) {
             int cur_fd = events[i].data.fd;
 
-            if(cur_fd == server_fd) {
-                while(true) {
-                    client_fd = accept(server_fd, NULL, NULL);
-                    if(client_fd == -1) {
-                        if(errno != EWOULDBLOCK) {
-                            perror("error accepting");
-                        }
-                        break;
-                    }
-                    make_nonblocking(client_fd);
-                    event.data.fd = client_fd;
-                    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &event) == -1) {
-                        perror("epoll_ctl");
-                        return -1;
-                    }
-                    cout << "new Client added Successfully" << endl;
+            if (cur_fd == server_fd) {
+                sockaddr_in client_addr{};
+                socklen_t client_len = sizeof(client_addr);
+                int client_fd = accept(server_fd, (sockaddr*)&client_addr, &client_len);
+                if (client_fd < 0) continue;
 
-                }
+                set_non_blocking(client_fd);
 
-            }
-            else if(events[i].events & EPOLLIN) {
-                char buffer[BUFFER_SIZE];
-                int bytes_read = read(cur_fd, buffer, sizeof(buffer));
-                if(bytes_read <= 0) {
-                    epoll_ctl(epoll_fd, EPOLL_CTL_DEL, cur_fd, NULL);
-                    cout << "Client Disconnected" << endl;
+                epoll_event client_event{};
+                client_event.events = EPOLLIN;
+                client_event.data.fd = client_fd;
+                epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &client_event);
+
+            } else {
+                char buff[BUFFER_SIZE] = {0};
+                int bytes_read = recv(cur_fd, buff, sizeof(buff) - 1, 0);
+
+                if (bytes_read <= 0) {
                     close(cur_fd);
+                    epoll_ctl(epoll_fd, EPOLL_CTL_DEL, cur_fd, nullptr);
+                    if (clients_to_rooms.count(cur_fd)) {
+                        string room = clients_to_rooms[cur_fd];
+                        rooms_to_clients[room].erase(cur_fd);
+                    }
+                    clients_to_usernames.erase(cur_fd);
+                    clients_to_rooms.erase(cur_fd);
+                    continue;
+                }
+
+                buff[bytes_read] = '\0';
+                string message(buff);
+
+                if (!clients_to_usernames.count(cur_fd)) {
+                    size_t pos = message.find(':');
+                    if (pos == string::npos) {
+                        cout << "Bad message from client FD " << cur_fd << ". Client terminated." << endl;
+                        close(cur_fd);
+                        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, cur_fd, nullptr);
+                        continue;
+                    }
+                    string username = message.substr(0, pos);
+                    string room = message.substr(pos + 1);
+
+                    clients_to_usernames[cur_fd] = username;
+                    clients_to_rooms[cur_fd] = room;
+                    rooms_to_clients[room].insert(cur_fd);
+
+                    cout << username << " joined " << room << endl;
+
+                } else {
+                    string username = clients_to_usernames[cur_fd];
+                    string room = clients_to_rooms[cur_fd];
+                    string full_msg = username + ": " + message;
+                    cout << full_msg << endl;
+                    for (int client : rooms_to_clients[room]) {
+                        if (client != cur_fd) {
+                            send(client, full_msg.c_str(), full_msg.length(), 0);
+                        }
+                    }
                 }
             }
-            else {
-                
-            }
-
         }
     }
+
+    close(server_fd);
     return 0;
 }
