@@ -76,6 +76,7 @@ int main() {
 
                 if (bytes_read <= 0) {
                     if(errno == EAGAIN || errno == EWOULDBLOCK) break;
+                    cout << "Client " << clients_to_usernames[cur_fd] << " has disconnected";
                     close(cur_fd);
                     epoll_ctl(epoll_fd, EPOLL_CTL_DEL, cur_fd, nullptr);
                     if (clients_to_rooms.count(cur_fd)) {
