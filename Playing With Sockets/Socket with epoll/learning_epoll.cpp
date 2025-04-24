@@ -45,7 +45,7 @@ int main() {
     int epoll_fd = epoll_create1(0);
 
     epoll_event event{};
-    event.events = EPOLLIN;
+    event.events = EPOLLIN | EPOLLET;
     event.data.fd = server_fd;
     epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_fd, &event);
 
@@ -65,15 +65,17 @@ int main() {
                 set_non_blocking(client_fd);
 
                 epoll_event client_event{};
-                client_event.events = EPOLLIN;
+                client_event.events = EPOLLIN | EPOLLET;
                 client_event.data.fd = client_fd;
                 epoll_ctl(epoll_fd, EPOLL_CTL_ADD, client_fd, &client_event);
 
             } else {
                 char buff[BUFFER_SIZE] = {0};
-                int bytes_read = recv(cur_fd, buff, sizeof(buff) - 1, 0);
+                while(true) {
+                 int bytes_read = recv(cur_fd, buff, sizeof(buff) - 1, 0);
 
                 if (bytes_read <= 0) {
+                    if(errno == EAGAIN || errno == EWOULDBLOCK) break;
                     close(cur_fd);
                     epoll_ctl(epoll_fd, EPOLL_CTL_DEL, cur_fd, nullptr);
                     if (clients_to_rooms.count(cur_fd)) {
@@ -115,6 +117,7 @@ int main() {
                             send(client, full_msg.c_str(), full_msg.length(), 0);
                         }
                     }
+                }
                 }
             }
         }
