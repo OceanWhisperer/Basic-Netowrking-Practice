@@ -15,6 +15,13 @@ unordered_map<int, string> clients_to_rooms;
 unordered_map<string, unordered_set<int>> rooms_to_clients;
 unordered_map<int, queue<string>>pending_messages;
 
+void modify_epoll(int epoll_fd, int client, uint32_t events) {
+    epoll_event event{};
+    event.events = events;
+    event.data.fd = client;
+    epoll_ctl(epoll_fd, EPOLL_CTL_MOD, client, &event);
+ }
+
 void try_send_pending(int epoll_fd, int client) {
     auto &q = pending_messages[client];
     while(!q.empty()) {
@@ -34,13 +41,6 @@ void try_send_pending(int epoll_fd, int client) {
     }
     modify_epoll(epoll_fd, client, EPOLLIN | EPOLLET);
 
-}
-
-void modify_epoll(int epoll_fd, int client, uint32_t events) {
-   epoll_event event{};
-   event.events = events;
-   event.data.fd = client;
-   epoll_ctl(epoll_fd, EPOLL_CTL_MOD, client, &event);
 }
 
 void set_non_blocking(int sockfd) {
