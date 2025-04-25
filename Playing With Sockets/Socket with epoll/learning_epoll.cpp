@@ -13,6 +13,35 @@ using namespace std;
 unordered_map<int, string> clients_to_usernames;
 unordered_map<int, string> clients_to_rooms;
 unordered_map<string, unordered_set<int>> rooms_to_clients;
+unordered_map<int, queue<string>>pending_messages;
+
+void try_send_pending(int epoll_fd, int client) {
+    auto &q = pending_messages[client];
+    while(!q.empty()) {
+        const string &mesg = q.front();
+        ssize_t bytes_sent = send(client, mesg.c_str(), mesg.length(), 0);
+        if(bytes_sent == -1) {
+            if(errno == EAGAIN or errno == EWOULDBLOCK) return; // meaning still full
+            close(client);
+            epoll_ctl(epoll_fd, EPOLL_CTL_DEL, client, nullptr);
+            return;
+        }
+        else if(bytes_sent < mesg.size()) {
+            q.push(mesg.substr(bytes_sent));
+            break;
+        }
+        q.pop();
+    }
+    modify_epoll(epoll_fd, client, EPOLLIN | EPOLLET);
+
+}
+
+void modify_epoll(int epoll_fd, int client, uint32_t events) {
+   epoll_event event{};
+   event.events = events;
+   event.data.fd = client;
+   epoll_ctl(epoll_fd, EPOLL_CTL_MOD, client, &event);
+}
 
 void set_non_blocking(int sockfd) {
     int flags = fcntl(sockfd, F_GETFL, 0);
@@ -114,12 +143,18 @@ int main() {
                     string full_msg = username + ": " + message;
                     cout << full_msg << endl;
                     for (int client : rooms_to_clients[room]) {
-                        if (client != cur_fd) {
-                            send(client, full_msg.c_str(), full_msg.length(), 0);
+                        if(client == cur_fd)continue;
+                        ssize_t bytes_sent = send(client, full_msg.c_str(), full_msg.length(), 0);
+                        if(bytes_sent == -1 || bytes_sent < full_msg.length()) {
+                           pending_messages[client].push(full_msg.substr(bytes_sent > 0 ? bytes_sent : 0));
+                            modify_epoll(epoll_fd, client,EPOLLIN | EPOLLET | EPOLLOUT);
                         }
                     }
                 }
                 }
+            }
+            if(events[i].events and EPOLLOUT) {
+                try_send_pending(epoll_fd, cur_fd);
             }
         }
     }
