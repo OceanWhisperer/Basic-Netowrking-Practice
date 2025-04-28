@@ -97,7 +97,6 @@ void send_broadcast_message(int epoll_fd, const string &room, int sender_fd, con
                 modify_epoll(epoll_fd, client_fd, EPOLLIN | EPOLLET | EPOLLOUT);
             }
         } else {
-            // Already pending write, just append new message
             client.write_buffer += full_msg;
         }
     }
