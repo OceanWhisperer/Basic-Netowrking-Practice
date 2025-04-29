@@ -23,7 +23,7 @@ int main(int argc, char *argv[]) {
     }
 
     int sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol); // tcp socket for conencting
-    if (connect(sock, res->ai_addr, res->ai_addrlen) != 0) {
+    if (connect(sock, res->ai_addr, res->ai_addrlen) != 0) { // make connect
         perror("connect failed");
         return 1;
     }
@@ -31,7 +31,7 @@ int main(int argc, char *argv[]) {
                   "Host: " + host + "\r\n"
                   "User-Agent: my-cpp-client\r\n"
                   "Accept: */*\r\n"
-                  "\r\n";
+                  "\r\n"; // very basic headers
     send(sock, req.c_str(), req.size(), 0);
     char buffer[4096];
     ssize_t bytes_read;
